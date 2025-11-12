@@ -1,43 +1,32 @@
 package gui;
 
-import javax.swing.*;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.*;
+import model.Schedule;
 
 /**
  * SeatMapPanel.java
- *
- * Visual seat map representation using a 2D array of buttons.
- *
- * DSA:
- * - Seats represented as a 2D boolean array: seatSelected[row][col]
- * - Traversal: iterate rows/cols to compute selected seats
- * - Uses ArrayList<Integer> to collect seat numbers for booking
- *
- * Integration:
- * - TODO: Load reserved seats from ScheduleDAO and mark them disabled.
- * - On confirm: send selected seats to BookingController.enqueueBooking(...)
+ * Renders seats and writes selected seat numbers into MainFrame.pendingSelectedSeats.
  */
-public class SeatMapPanel extends JPanel {
+public class SeatMapPanel extends JPanel implements Refreshable {
 
     private final MainFrame host;
     private final JPanel seatsGrid = new JPanel();
     private final JButton confirmBtn = new JButton("Confirm Seats");
     private final JButton backBtn = new JButton("← Back");
 
-    // Seat map configuration (rows x cols)
-    private final int rows = 8;
-    private final int cols = 5;
-    private final JToggleButton[][] seatButtons = new JToggleButton[rows][cols];
+    private int rows = 8;
+    private int cols = 5;
+    private JToggleButton[][] seatButtons;
+    private boolean[][] seatSelected;
 
-    // DSA: 2D boolean array representing selection/reservation state
-    private final boolean[][] seatSelected = new boolean[rows][cols];
+    private Schedule schedule; // currently loaded schedule
 
     public SeatMapPanel(MainFrame host) {
         this.host = host;
         init();
-        renderSeats();
     }
 
     private void init() {
@@ -61,31 +50,69 @@ public class SeatMapPanel extends JPanel {
         confirmBtn.addActionListener(e -> handleConfirm());
     }
 
-    private void renderSeats() {
+    @Override
+    public void refresh() {
+        // Reset state and load schedule information from AppContext
+        seatButtons = null;
+        seatSelected = null;
         seatsGrid.removeAll();
 
-        // Example: mark some seats as reserved (demo). In real app, query schedule seat_map.
-        boolean[][] reserved = new boolean[rows][cols];
-        reserved[0][1] = true; // a reserved seat example
-        reserved[3][2] = true;
+        int scheduleId = controller.AppContext.getSelectedScheduleId();
+        schedule = null;
+        if (scheduleId <= 0) {
+            seatsGrid.revalidate();
+            seatsGrid.repaint();
+            return;
+        }
 
+        // Find schedule from controller lists (ScheduleController doesn't expose getById)
+        // We'll fetch schedules for the selected route and search for matching id
+        int routeId = controller.AppContext.getSelectedRouteId();
+        List<Schedule> candidates = new ArrayList<>();
+        try { candidates.addAll(controller.AppContext.schedule().getSchedules(routeId, model.TransportType.BUS)); } catch (Exception ignored) {}
+        try { candidates.addAll(controller.AppContext.schedule().getSchedules(routeId, model.TransportType.TRAIN)); } catch (Exception ignored) {}
+        for (Schedule s : candidates) if (s.getId() == scheduleId) schedule = s;
+
+        // If schedule found, set rows/cols based on totalSeats (try to keep grid rectangular)
+        int totalSeats = (schedule != null && schedule.getTotalSeats() > 0) ? schedule.getTotalSeats() : (rows * cols);
+        // derive rows x cols: prefer ~5 columns
+        cols = Math.min(6, Math.max(4, totalSeats / 8 == 0 ? 5 : totalSeats / 8));
+        rows = (int) Math.ceil((double) totalSeats / cols);
+
+        seatButtons = new JToggleButton[rows][cols];
+        seatSelected = new boolean[rows][cols];
+
+        // Build reserved map from seatMap string (CSV)
+        boolean[][] reserved = new boolean[rows][cols];
+        if (schedule != null && schedule.getSeatMap() != null && !schedule.getSeatMap().isBlank()) {
+            String[] tokens = schedule.getSeatMap().split(",");
+            for (String t : tokens) {
+                if (t.isBlank()) continue;
+                try {
+                    int sn = Integer.parseInt(t.trim());
+                    int r = (sn - 1) / cols;
+                    int c = (sn - 1) % cols;
+                    if (r >= 0 && r < rows && c >= 0 && c < cols) reserved[r][c] = true;
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+
+        seatsGrid.setLayout(new GridLayout(rows, cols, 8, 8));
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < cols; c++) {
                 int seatNum = r * cols + c + 1;
-                JToggleButton btn = new JToggleButton(String.valueOf(seatNum));
+                String label = String.valueOf(seatNum);
+                JToggleButton btn = new JToggleButton(label);
                 btn.setPreferredSize(new Dimension(60, 40));
                 btn.setFocusPainted(false);
 
                 if (reserved[r][c]) {
                     btn.setEnabled(false);
-                    btn.setText(seatNum + " (X)");
+                    btn.setText(label + " (X)");
                 } else {
                     final int rr = r, cc = c;
-                    btn.addActionListener(a -> {
-                        seatSelected[rr][cc] = btn.isSelected();
-                    });
+                    btn.addActionListener(a -> seatSelected[rr][cc] = btn.isSelected());
                 }
-
                 seatButtons[r][c] = btn;
                 seatsGrid.add(btn);
             }
@@ -96,13 +123,11 @@ public class SeatMapPanel extends JPanel {
     }
 
     private void handleConfirm() {
-        // Traverse 2D boolean array to collect selected seats (DSA traversal)
         List<Integer> selectedSeatNumbers = new ArrayList<>();
-        for (int r = 0; r < rows; r++) {
-            for (int c = 0; c < cols; c++) {
-                if (seatSelected[r][c]) {
-                    int seatNum = r * cols + c + 1;
-                    selectedSeatNumbers.add(seatNum);
+        if (seatSelected != null) {
+            for (int r = 0; r < seatSelected.length; r++) {
+                for (int c = 0; c < seatSelected[r].length; c++) {
+                    if (seatSelected[r][c]) selectedSeatNumbers.add(r * cols + c + 1);
                 }
             }
         }
@@ -112,10 +137,7 @@ public class SeatMapPanel extends JPanel {
             return;
         }
 
-        // TODO: Pass selectedSeatNumbers to BookingController (e.g., enqueue booking)
-        // BookingController.getInstance().selectSeats(scheduleId, selectedSeatNumbers);
-
-        // Pass info to confirmation panel (optionally via shared controller/state)
+        host.setPendingSelectedSeats(selectedSeatNumbers);
         JOptionPane.showMessageDialog(this, "Seats selected: " + selectedSeatNumbers, "Seats", JOptionPane.INFORMATION_MESSAGE);
         host.showPanel(MainFrame.PANEL_CONFIRMATION);
     }

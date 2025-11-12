@@ -1,30 +1,20 @@
 package gui;
 
-import javax.swing.*;
 import java.awt.*;
-import java.util.ArrayDeque;
-import java.util.Queue;
+import java.util.List;
+import javax.swing.*;
+import model.Ticket;
 
 /**
  * ConfirmationPanel.java
- *
- * Shows booking summary and confirms booking.
- *
- * DSA:
- * - Uses a Queue (ArrayDeque) to simulate booking request queue (enqueue on confirm).
- *
- * Integration:
- * - TODO: Replace localQueue with BookingController.enqueue(...)
+ * Reads selected seats from MainFrame.pendingSelectedSeats and creates Ticket via BookingController.
  */
-public class ConfirmationPanel extends JPanel {
+public class ConfirmationPanel extends JPanel implements Refreshable {
 
     private final MainFrame host;
     private final JTextArea summaryArea = new JTextArea(8, 40);
     private final JButton confirmBtn = new JButton("Confirm Booking");
     private final JButton backBtn = new JButton("← Back");
-
-    // Demo booking request queue (DSA queue)
-    private static final Queue<String> localQueue = new ArrayDeque<>();
 
     public ConfirmationPanel(MainFrame host) {
         this.host = host;
@@ -39,7 +29,6 @@ public class ConfirmationPanel extends JPanel {
         add(header, BorderLayout.NORTH);
 
         summaryArea.setEditable(false);
-        summaryArea.setText("Booking details will appear here.\n(Seats, schedule, price, user info)");
         add(new JScrollPane(summaryArea), BorderLayout.CENTER);
 
         JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -51,22 +40,49 @@ public class ConfirmationPanel extends JPanel {
         confirmBtn.addActionListener(e -> handleConfirm());
     }
 
-    private void handleConfirm() {
-        // In a real app, construct a BookingRequest object and enqueue it in BookingController.
-        // For demo: push a textual record into our local queue to demonstrate queue behavior (FIFO).
-        String bookingSummary = "DemoBooking@" + System.currentTimeMillis();
-        localQueue.add(bookingSummary); // enqueue
+    @Override
+    public void refresh() {
+        // Build summary from AppContext and host.pendingSelectedSeats
+        var user = controller.AppContext.getLoggedInUser();
+        int scheduleId = controller.AppContext.getSelectedScheduleId();
+        List<Integer> seats = host.getPendingSelectedSeats();
 
-        // TODO: replace with: BookingController.getInstance().enqueue(bookingRequest);
-
-        JOptionPane.showMessageDialog(this, "Booking confirmed and queued (demo).", "Success", JOptionPane.INFORMATION_MESSAGE);
-        host.showPanel(MainFrame.PANEL_MY_BOOKINGS);
+        StringBuilder sb = new StringBuilder();
+        sb.append("User: ").append(user == null ? "(not logged in)" : user.getName()).append("\n");
+        sb.append("Schedule ID: ").append(scheduleId).append("\n");
+        sb.append("Seats: ").append(seats == null ? "None" : seats.toString()).append("\n");
+        sb.append("\nPayment: Cash (demo)\n");
+        summaryArea.setText(sb.toString());
     }
 
-    /**
-     * Demo access to queue contents (DSA traversal)
-     */
-    public static String dequeueDemo() {
-        return localQueue.poll();
+    private void handleConfirm() {
+        var user = controller.AppContext.getLoggedInUser();
+        if (user == null) {
+            JOptionPane.showMessageDialog(this, "You must be logged in to book.", "Auth", JOptionPane.WARNING_MESSAGE);
+            host.showPanel(MainFrame.PANEL_LOGIN);
+            return;
+        }
+
+        int scheduleId = controller.AppContext.getSelectedScheduleId();
+        List<Integer> seats = host.getPendingSelectedSeats();
+        if (seats == null || seats.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "No seats selected.", "Validation", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        // create Ticket and enqueue booking via BookingController
+        String seatsCsv = seats.stream().map(Object::toString).reduce((a,b)->a+","+b).orElse("");
+        Ticket t = new Ticket(user.getId(), scheduleId, seatsCsv, "Cash", "BOOKED");
+
+        controller.AppContext.booking().bookTicket(t);
+
+        JOptionPane.showMessageDialog(this, "Booking confirmed and queued.", "Success", JOptionPane.INFORMATION_MESSAGE);
+
+        // Clear pending seats
+        host.setPendingSelectedSeats(null);
+
+        // Move to My Bookings (refresh will load from booking controller's loaded list)
+        controller.AppContext.booking().loadUserBookings(user.getId());
+        host.showPanel(MainFrame.PANEL_MY_BOOKINGS);
     }
 }

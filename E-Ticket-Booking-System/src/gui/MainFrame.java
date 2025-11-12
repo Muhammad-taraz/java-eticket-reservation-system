@@ -1,17 +1,14 @@
 package gui;
 
-import javax.swing.*;
 import java.awt.*;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import javax.swing.*;
 
 /**
- * MainFrame.java
- *
  * Main application window that holds all panels in a CardLayout.
- * Panels are registered by name and can be swapped via showPanel(name).
- *
- * DSA note: A HashMap (panelsMap) keeps O(1) access to panels by name.
+ * Also stores small session data (pending selected seats).
  */
 public class MainFrame extends JFrame {
 
@@ -28,6 +25,9 @@ public class MainFrame extends JFrame {
     private final JPanel cardContainer = new JPanel(cardLayout);
     private final Map<String, JPanel> panelsMap = new HashMap<>();
 
+    // Small session storage exposed to GUI panels
+    private List<Integer> pendingSelectedSeats = null;
+
     public MainFrame() {
         super("E-Ticket Booking System");
         initLookAndFeel();
@@ -38,7 +38,7 @@ public class MainFrame extends JFrame {
     }
 
     private void buildUI() {
-        // Register real panels (constructed with a reference to this MainFrame so they can navigate)
+        // Register panels
         addPanel(PANEL_LOGIN, new LoginPanel(this));
         addPanel(PANEL_REGISTER, new RegisterPanel(this));
         addPanel(PANEL_HOME, new HomePanel(this));
@@ -54,41 +54,34 @@ public class MainFrame extends JFrame {
         showPanel(PANEL_LOGIN);
     }
 
-    /**
-     * Register a panel into the CardLayout and internal map.
-     */
     public void addPanel(String name, JPanel panel) {
         panelsMap.put(name, panel);
         cardContainer.add(panel, name);
     }
 
-    /**
-     * Replace an existing panel with a new instance (hot-swap friendly).
-     */
     public void replacePanel(String name, JPanel panel) {
         JPanel old = panelsMap.remove(name);
-        if (old != null) {
-            cardContainer.remove(old);
-        }
+        if (old != null) cardContainer.remove(old);
         addPanel(name, panel);
         cardContainer.revalidate();
         cardContainer.repaint();
     }
 
     /**
-     * Show registered panel by name.
+     * Show registered panel by name and call refresh() if panel implements Refreshable.
      */
     public void showPanel(String name) {
-        if (!panelsMap.containsKey(name)) {
+        JPanel p = panelsMap.get(name);
+        if (p == null) {
             System.err.println("Panel not found: " + name);
             return;
+        }
+        if (p instanceof Refreshable) {
+            ((Refreshable) p).refresh();
         }
         cardLayout.show(cardContainer, name);
     }
 
-    /**
-     * Simple cross-platform look & feel and base font tweaks.
-     */
     private void initLookAndFeel() {
         try {
             UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
@@ -106,9 +99,10 @@ public class MainFrame extends JFrame {
         }
     }
 
-    /**
-     * Dev runnable main (launches UI on EDT).
-     */
+    // Session accessor for seats selected in SeatMapPanel (used by ConfirmationPanel)
+    public void setPendingSelectedSeats(java.util.List<Integer> seats) { this.pendingSelectedSeats = seats; }
+    public java.util.List<Integer> getPendingSelectedSeats() { return pendingSelectedSeats; }
+
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             MainFrame mf = new MainFrame();

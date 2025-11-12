@@ -1,16 +1,12 @@
 package gui;
 
-import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
+import javax.swing.*;
 
 /**
  * RegisterPanel.java
- *
- * Simple registration UI. Demonstrates client-side validation and form layout.
- *
- * DSA notes:
- * - Uses local arrays for quick validation checks (e.g., required field names).
+ * Registers using controller.AppContext.auth().registerUser(...)
  */
 public class RegisterPanel extends JPanel {
 
@@ -75,7 +71,6 @@ public class RegisterPanel extends JPanel {
         String phone = phoneField.getText().trim();
         String pass = new String(passwordField.getPassword());
 
-        // Basic validations
         String[] required = {"Name", "Email", "Phone", "Password"};
         String[] values = {name, email, phone, pass};
         for (int i = 0; i < required.length; i++) {
@@ -85,18 +80,12 @@ public class RegisterPanel extends JPanel {
             }
         }
 
-        if (!email.contains("@") || phone.length() < 7) {
-            JOptionPane.showMessageDialog(this, "Provide a valid email and phone.", "Validation", JOptionPane.WARNING_MESSAGE);
-            return;
+        boolean ok = controller.AppContext.auth().registerUser(name, email, phone, pass);
+        if (ok) {
+            JOptionPane.showMessageDialog(this, "Registered successfully. Please login.", "Success", JOptionPane.INFORMATION_MESSAGE);
+            host.showPanel(MainFrame.PANEL_LOGIN);
+        } else {
+            JOptionPane.showMessageDialog(this, "Email already exists or registration failed.", "Error", JOptionPane.ERROR_MESSAGE);
         }
-
-        // TODO: Call AuthController.register(new User(...))
-        // boolean ok = AuthController.getInstance().register(...);
-        // if (ok) host.showPanel(MainFrame.PANEL_LOGIN);
-        // else show error dialog
-
-        // For now demo success:
-        JOptionPane.showMessageDialog(this, "Registered successfully (demo). Please login.", "Success", JOptionPane.INFORMATION_MESSAGE);
-        host.showPanel(MainFrame.PANEL_LOGIN);
     }
 }

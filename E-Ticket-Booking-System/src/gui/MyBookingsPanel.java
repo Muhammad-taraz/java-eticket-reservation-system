@@ -1,21 +1,15 @@
 package gui;
 
-import javax.swing.*;
 import java.awt.*;
 import java.util.LinkedList;
+import javax.swing.*;
+import model.Ticket;
 
 /**
  * MyBookingsPanel.java
- *
- * Shows user's bookings in a list. Demonstrates LinkedList usage.
- *
- * DSA:
- * - Uses LinkedList<String> to store booking entries to allow efficient insertion and deletion.
- *
- * Integration:
- * - TODO: Populate from TicketDAO or BookingController for real data.
+ * Loads from BookingController.userBookings.
  */
-public class MyBookingsPanel extends JPanel {
+public class MyBookingsPanel extends JPanel implements Refreshable {
 
     private final MainFrame host;
     private final DefaultListModel<String> listModel = new DefaultListModel<>();
@@ -24,14 +18,9 @@ public class MyBookingsPanel extends JPanel {
     private final JButton refreshBtn = new JButton("Refresh");
     private final JButton backBtn = new JButton("← Back");
 
-    // Demo dynamic linked list storing booking ids/strings
-    private final LinkedList<String> bookingsLinkedList = new LinkedList<>();
-
     public MyBookingsPanel(MainFrame host) {
         this.host = host;
         init();
-        loadDemoBookings();
-        refreshListFromLinkedList();
     }
 
     private void init() {
@@ -51,25 +40,27 @@ public class MyBookingsPanel extends JPanel {
         add(bottom, BorderLayout.SOUTH);
 
         backBtn.addActionListener(e -> host.showPanel(MainFrame.PANEL_HOME));
-        refreshBtn.addActionListener(e -> {
-            // TODO: reload bookings from controller and re-populate linked list
-            refreshListFromLinkedList();
-        });
+        refreshBtn.addActionListener(e -> refresh());
         cancelBtn.addActionListener(e -> handleCancel());
     }
 
-    private void loadDemoBookings() {
-        bookingsLinkedList.clear();
-        // Demo data; in real app, fetch via TicketDAO or BookingController for the logged in user
-        bookingsLinkedList.add("Booking#1001 - Karachi→Lahore - 2 seats - BOOKED");
-        bookingsLinkedList.add("Booking#1002 - Karachi→Islamabad - 1 seat - BOOKED");
-    }
-
-    private void refreshListFromLinkedList() {
+    @Override
+    public void refresh() {
         listModel.clear();
-        // Traversal of LinkedList to populate UI
-        for (String b : bookingsLinkedList) {
-            listModel.addElement(b);
+        var user = controller.AppContext.getLoggedInUser();
+        if (user == null) {
+            listModel.addElement("Not logged in.");
+            return;
+        }
+        // Ensure booking controller has loaded current user's bookings
+        controller.AppContext.booking().loadUserBookings(user.getId());
+        LinkedList<Ticket> bookings = controller.AppContext.booking().getUserBookings();
+        if (bookings.isEmpty()) {
+            listModel.addElement("No bookings found.");
+            return;
+        }
+        for (Ticket t : bookings) {
+            listModel.addElement(t.toString());
         }
     }
 
@@ -80,16 +71,36 @@ public class MyBookingsPanel extends JPanel {
             return;
         }
         String selected = bookingsList.getSelectedValue();
-
         int confirm = JOptionPane.showConfirmDialog(this, "Cancel booking?\n" + selected, "Confirm Cancel", JOptionPane.YES_NO_OPTION);
         if (confirm == JOptionPane.YES_OPTION) {
-            // DSA deletion from LinkedList (efficient removal)
-            bookingsLinkedList.remove(idx);
+            // Parse ticket id from toString; Ticket.toString prints "Ticket{id=..., ..."
+            int ticketId = parseTicketId(selected);
+            if (ticketId > 0) {
+                boolean ok = controller.AppContext.booking().cancelTicket(ticketId);
+                if (ok) {
+                    JOptionPane.showMessageDialog(this, "Booking cancelled.", "Cancelled", JOptionPane.INFORMATION_MESSAGE);
+                    refresh();
+                } else {
+                    JOptionPane.showMessageDialog(this, "Cancellation failed.", "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            } else {
+                JOptionPane.showMessageDialog(this, "Could not determine ticket id.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
 
-            // TODO: Call BookingController.cancel(bookingId) or TicketDAO.updateStatus(...)
-            // For now reflect change immediately in UI:
-            refreshListFromLinkedList();
-            JOptionPane.showMessageDialog(this, "Booking cancelled (demo).", "Cancelled", JOptionPane.INFORMATION_MESSAGE);
+    private int parseTicketId(String text) {
+        if (text == null) return -1;
+        try {
+            int start = text.indexOf("id=");
+            if (start < 0) return -1;
+            start += 3;
+            int end = text.indexOf(",", start);
+            if (end < 0) end = text.indexOf("}", start);
+            String idStr = text.substring(start, end).trim();
+            return Integer.parseInt(idStr);
+        } catch (Exception ex) {
+            return -1;
         }
     }
 }

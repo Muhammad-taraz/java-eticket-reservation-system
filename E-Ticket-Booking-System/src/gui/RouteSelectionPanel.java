@@ -1,37 +1,28 @@
 package gui;
 
-import javax.swing.*;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.*;
+import model.Route;
 
 /**
  * RouteSelectionPanel.java
- *
- * Allows the user to select source/destination and transport type.
- *
- * DSA focus:
- * - Uses ArrayList<String> to hold route descriptions (dynamic list).
- * - Demonstrates searching/filtering on the list via traversal.
- *
- * Integration:
- * - Replace the demo route population with RouteController.getRoutes() call.
+ * Loads routes via AppContext.route().getAllRoutes()
  */
-public class RouteSelectionPanel extends JPanel {
+public class RouteSelectionPanel extends JPanel implements Refreshable {
 
     private final MainFrame host;
-    private final DefaultListModel<String> routeListModel = new DefaultListModel<>();
-    private final JList<String> routeJList = new JList<>(routeListModel);
+    private final DefaultListModel<Route> routeListModel = new DefaultListModel<>();
+    private final JList<Route> routeJList = new JList<>(routeListModel);
     private final JTextField filterField = new JTextField(20);
 
-    // Underlying dynamic list (ArrayList) representing available routes (DSA)
-    private final List<String> routes = new ArrayList<>();
+    // Backing list of Route objects
+    private final List<Route> routes = new ArrayList<>();
 
     public RouteSelectionPanel(MainFrame host) {
         this.host = host;
         init();
-        loadRoutesDemo();
-        refreshListFromArrayList();
     }
 
     private void init() {
@@ -51,6 +42,16 @@ public class RouteSelectionPanel extends JPanel {
 
         routeJList.setVisibleRowCount(10);
         routeJList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        routeJList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof Route) {
+                    setText(((Route) value).toString());
+                }
+                return this;
+            }
+        });
         center.add(new JScrollPane(routeJList), BorderLayout.CENTER);
 
         JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -62,12 +63,12 @@ public class RouteSelectionPanel extends JPanel {
         add(center, BorderLayout.CENTER);
         add(bottom, BorderLayout.SOUTH);
 
-        // Listeners
         searchBtn.addActionListener(e -> applyFilter());
         filterField.addActionListener(e -> applyFilter());
         next.addActionListener(e -> {
-            if (routeJList.getSelectedIndex() >= 0) {
-                // TODO: store selected route in a controller or shared state
+            Route sel = routeJList.getSelectedValue();
+            if (sel != null) {
+                controller.AppContext.setSelectedRouteId(sel.getId());
                 host.showPanel(MainFrame.PANEL_SCHEDULE);
             } else {
                 JOptionPane.showMessageDialog(this, "Choose a route first.", "Validation", JOptionPane.WARNING_MESSAGE);
@@ -78,31 +79,20 @@ public class RouteSelectionPanel extends JPanel {
 
     private void applyFilter() {
         String q = filterField.getText().trim().toLowerCase();
-        // Demonstrates traversal/search in the ArrayList routes
         routeListModel.clear();
-        for (String r : routes) {
-            if (q.isEmpty() || r.toLowerCase().contains(q)) {
+        for (Route r : routes) {
+            if (q.isEmpty() || r.getSource().toLowerCase().contains(q) || r.getDestination().toLowerCase().contains(q)) {
                 routeListModel.addElement(r);
             }
         }
     }
 
-    /**
-     * Demo loader: populate the ArrayList with seeded route strings.
-     * Replace this with RouteController.fetchRoutes() when available.
-     */
-    private void loadRoutesDemo() {
+    @Override
+    public void refresh() {
+        // load routes from controller
         routes.clear();
-        // Example route strings: "Karachi → Lahore (BUS, TRAIN)"
-        routes.add("Karachi → Lahore (BUS, TRAIN)");
-        routes.add("Karachi → Islamabad (BUS)");
-        routes.add("Lahore → Islamabad (TRAIN, BUS)");
-        routes.add("Islamabad → Peshawar (BUS)");
-        routes.add("Multan → Karachi (BUS)");
-    }
-
-    private void refreshListFromArrayList() {
+        routes.addAll(controller.AppContext.route().getAllRoutes());
         routeListModel.clear();
-        for (String r : routes) routeListModel.addElement(r);
+        for (Route r : routes) routeListModel.addElement(r);
     }
 }
